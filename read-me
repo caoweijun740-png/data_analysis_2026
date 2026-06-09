@@ -1,127 +1,78 @@
-#--------------------start-------------------------------
-# Get current working directory
-getwd()
-# create path relative to project root
-#data_path <- "/cloud/project/data/DataSet_No_Details.csv"
-data_path <- "DataSet_No_Details.csv"
-#----------------read dataset--------------------------
-df <- read.csv(data_path)
-# Display structure with variable types
-str(df)
-# Beautiful summary with histograms for numeric variables
-install.packages("skimr")
-library(skimr)
-skim(df) 
-#---------------data set preparation------------------
-library(dplyr)
-# Delete a few columns 
-cols_to_remove <- c("h_index_34", "h_index_56", "hormone10_1", "hormone10_2","an_index_23","outcome","factor_eth","factor_h","factor_pcos","factor_prl")
-MD_df <- df %>% select(-any_of(cols_to_remove))
-factor_df <- df %>% select (record_id, outcome, factor_eth, factor_h,factor_pcos,factor_prl)
-str(MD_df)
-summary(factor_df)
+# README: Antioxidant Data Analysis Workflow
 
-#--------------Identify Missing Values-----------------
-sum(is.na(MD_df))               # Total NAs in entire dataset
-colSums(is.na(MD_df))           # NA counts per column
-skim(MD_df)
-na_stats <- colMeans(is.na(MD_df)) * 100 # % missing data
-na_stats
-na_stats_filtered <- na_stats[na_stats <= 35] #  missing data <=35 %
-# result as a table
-data.frame(
-  Column = names(na_stats_filtered),
-  NA_Percent = na_stats_filtered,
-  row.names = NULL
-)
+This R script performs a comprehensive statistical analysis on a dataset containing antioxidant levels and a binary outcome variable. The analysis includes permutation-based Spearman correlation, multiple regression models (linear, polynomial, exponential, logarithmic), logistic regression, model comparison, and visualization of significant results.
 
-na_stats_filtered_1 <- na_stats[na_stats > 35] # missing data >35 %
-# result as a table
-data.frame(
-  Column = names(na_stats_filtered_1),
-  NA_Percent = na_stats_filtered_1,
-  row.names = NULL
-)
+## Requirements
 
-#-------------------Visualizing Missing Data Patterns------------------
-install.packages(visdat)
-library(visdat)
-vis_miss(MD_df)  # Visualizes NA patterns
+- R version 3.6 or higher
+- Required packages: `pROC` (install if missing)
+- No other external packages are required; the script uses base R functions for permutation tests and modeling.
 
-install.packages(naniar)
-library(naniar)
-gg_miss_var(MD_df)  # Barplot of missingness per variable
-#------------------ Analyzing the Impact of Missing Data--------------
-# Delete a few columns 
-library(dplyr)
-cols_to_remove1 <- c("hormone9", "hormone11", "hormone12", "hormone13","hormone14")
-handle_MD_df <- MD_df %>% select(-any_of(cols_to_remove1))
-str(handle_MD_df)
+## Data Format
 
-#------------------Performing Little's MCAR Test----------------------
-#Homework!!!
-#Hypotheses:
-#  H₀ (Null Hypothesis): Data is MCAR.
+The input file (`data_for_analysis.csv`) must contain the following columns:
 
-#H₁ (Alternative Hypothesis): Data is not MCAR (either MAR or MNAR).
+- `outcome` : binary factor (0/1 or two-level factor)
+- `antioxidant1`, `antioxidant2`, `antioxidant3`, `antioxidant4` : numeric variables
 
-#If p-value > 0.05, we fail to reject H₀ (data is likely MCAR).
-#If p-value ≤ 0.05, we reject H₀ (data is likely not MCAR).
-#------------------Imputation with MICE-------------------------------
-# Install packages if they are not already installed
-install.packages(c("mice", "ggplot2", "naniar"))
-# Load the packages
-library(mice)
-library(ggplot2)
-library(naniar)
+Missing values in `outcome` are removed automatically. Other missing values may cause errors – ensure data is clean.
 
-# Perform Multiple Imputation
-imputed_handle_MD_df <- mice(handle_MD_df, m=5, method='pmm', print=FALSE)
-# Perform Multiple Imputation 
-#Random Forest method 
-#------For complex nonlinear relationships between variables------------
+## Script Workflow
 
-imputed_handle_MD_df <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="rf")  
-imputed_handle_MD_df_final <- complete(imputed_handle_MD_df)  # generate full data
-# Density plots 
-ggplot(handle_MD_df, aes(x=hormone10_generated, fill="Original")) +
-  geom_density(alpha=0.5) +
-  geom_density(data=imputed_handle_MD_df_final, aes(x=hormone10_generated, fill="Imputed"), alpha=0.5) +
-  labs(title="Density Plot of hormone10_generated: Original vs. Imputed")+
-  scale_x_continuous(limits = c(0, 2))
+### 1. Setup & Data Loading
+- Set working directory (optional)
+- Read CSV file
+- Convert `outcome` to factor
+- Display summary statistics
 
-#Predictive Mean Matching 
-#------default for numeric data------------
-#Homework!!!
-imputed_handle_MD_df1 <- mice(handle_MD_df[, !names(handle_MD_df) %in% "New"], method="pmm")  
-imputed_handle_MD_df_final1 <- complete(imputed_handle_MD_df)  # generate full data
-# Density plots 
-ggplot(handle_MD_df, aes(x=hormone10_generated, fill="Original")) +
-  geom_density(alpha=0.5) +
-  geom_density(data=imputed_handle_MD_df_final1, aes(x=hormone10_generated, fill="Imputed"), alpha=0.5) +
-  labs(title="Density Plot of hormone10_generated: Original vs. Imputed")+
-  scale_x_continuous(limits = c(0, 2))
+### 2. Normality Check
+- Shapiro–Wilk test for `antioxidant1` and `antioxidant2`
+- Histogram and Q-Q plot for `antioxidant1`
 
-#----------------Outlier Detection Methods------------------------
-library(ggplot2)
-library(tidyr)
-outliers_data <- imputed_handle_MD_df_final %>%
-  select(lipids1, lipids2, lipids3, lipids4, lipids5) %>%
-  pivot_longer(everything(), names_to = "variable", values_to = "value")
+### 3. Permutation Spearman Correlation
+- Custom function `perm_spearman_test()` (10,000 permutations)
+- Correlations computed:
+  - `antioxidant1` vs. each of `antioxidant2`, `antioxidant3`, `antioxidant4`
+  - All pairwise combinations among `antioxidant2`, `antioxidant3`, `antioxidant4`
+- Results stored in a data frame with observed correlation and p-value
 
-# build a graph 
-ggplot(outliers_data, aes(x = variable, y = value)) +
-  geom_boxplot(fill = "lightblue", alpha = 0.7) +
-  labs(title = "Outlier Detection",
-       x = "variables",
-       y = "value") +
-  theme_minimal()
-#build a graph for all dataset
-imputed_handle_MD_df_final %>%
-  select(where(is.numeric)) %>%
-  pivot_longer(everything()) %>%
-  ggplot(aes(y = value)) +
-  geom_boxplot() +
-  facet_wrap(~name, scales = "free") +
-  labs(title = "Boxplots for Outlier Detection")
+### 4. Visualization of Significant Correlations (p < 0.05)
+- For each significant pair, a scatter plot is generated with a linear regression line.
+- If no significant correlations are found, a default plot of `antioxidant2` vs. `antioxidant1` is produced.
 
+### 5. Regression Analysis (response: `antioxidant1`, predictor: `antioxidant2`)
+- Linear model: `lm(antioxidant1 ~ antioxidant2)`
+- Second-degree polynomial: `lm(antioxidant1 ~ poly(antioxidant2, 2))`
+- Third-degree polynomial: `lm(antioxidant1 ~ poly(antioxidant2, 3))`
+- Exponential model: `lm(log(antioxidant1) ~ antioxidant2)`
+- Logarithmic model: `lm(antioxidant1 ~ log(antioxidant2))`
+- Model comparison using **BIC** (lower BIC indicates better fit)
+- Plot of linear model fit (scatter + fitted line)
+
+### 6. Logistic Regression (response: `outcome`)
+- Three models:
+  1. `outcome ~ antioxidant1`
+  2. `outcome ~ antioxidant1 + antioxidant2`
+  3. `outcome ~ antioxidant1 + antioxidant2 + antioxidant3 + antioxidant4` (full model)
+- Predict probabilities and classify using threshold 0.5
+- Confusion matrix (actual vs. predicted)
+- ROC curve and AUC using `pROC` package
+- Stepwise variable selection (both directions) based on AIC
+- Odds ratios and confidence intervals for coefficients of model 2
+
+## Outputs
+
+- **Console**: summary statistics, normality test results, correlation results, regression summaries, BIC comparison table, confusion matrix, AUC value, stepwise model output, odds ratios.
+- **Graphics** (displayed interactively):
+  - Histogram and Q-Q plot
+  - Scatter plots for significant correlations
+  - Linear regression fit plot
+  - ROC curve
+
+## How to Run
+
+1. Place your data file at `C://Users//ASUS//Downloads//data_for_analysis.csv` or modify the `read.csv()` path.
+2. Run the entire script in an R environment (RStudio or R console).
+3. Ensure the `pROC` package is installed:  
+   ```r
+   install.packages("pROC")
